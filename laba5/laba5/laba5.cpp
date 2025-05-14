@@ -1,5 +1,3 @@
-Вот тобі код, наступним сообщеніям я скажу що потрібно зробити
-
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -8,10 +6,11 @@
 #include <stdexcept>
 #include <limits>
 #include <algorithm>
+#include <unordered_set>
 
 using namespace std;
 
-// Базовий клас для елементів бібліотеки
+// Базовий клас
 class LibraryItem {
 protected:
     string title;
@@ -19,8 +18,9 @@ protected:
     string id;
 
 public:
-    LibraryItem(const string& t, const string& a, const string& i) 
+    LibraryItem(const string& t = "", const string& a = "", const string& i = "") 
         : title(t), author(a), id(i) {}
+
     virtual ~LibraryItem() = default;
 
     virtual void display() const {
@@ -41,9 +41,13 @@ public:
         author = data.substr(pos1 + 1, pos2 - pos1 - 1);
         id = data.substr(pos2 + 1);
     }
+
+    string getId() const {
+        return id;
+    }
 };
 
-// Клас для книг
+// Книга
 class Book : public LibraryItem {
     string ISBN;
     bool isBorrowed;
@@ -64,19 +68,13 @@ public:
 
     void fromFileString(const string& data) override {
         vector<string> parts;
-        size_t start = 0;
-        size_t end = data.find('|');
-        
-        while (end != string::npos) {
+        size_t start = 0, end;
+        while ((end = data.find('|', start)) != string::npos) {
             parts.push_back(data.substr(start, end - start));
             start = end + 1;
-            end = data.find('|', start);
         }
         parts.push_back(data.substr(start));
-
-        if (parts.size() != 5) {
-            throw invalid_argument("Invalid book data format");
-        }
+        if (parts.size() != 5) throw invalid_argument("Invalid book data format");
 
         title = parts[0];
         author = parts[1];
@@ -84,9 +82,14 @@ public:
         ISBN = parts[3];
         isBorrowed = parts[4] == "1";
     }
+
+    void borrow() {
+        if (isBorrowed) throw runtime_error("Book already borrowed!");
+        isBorrowed = true;
+    }
 };
 
-// Клас для журналів
+// Журнал
 class Magazine : public LibraryItem {
     int issueNumber;
 
@@ -105,16 +108,14 @@ public:
 
     void fromFileString(const string& data) override {
         size_t pos = data.rfind('|');
-        if (pos == string::npos) {
-            throw invalid_argument("Invalid magazine data format");
-        }
-        
+        if (pos == string::npos) throw invalid_argument("Invalid magazine data format");
+
         LibraryItem::fromFileString(data.substr(0, pos));
         issueNumber = stoi(data.substr(pos + 1));
     }
 };
 
-// Клас для користувача
+// Користувач
 class User {
     string name;
     vector<shared_ptr<LibraryItem>> borrowedItems;
@@ -122,7 +123,11 @@ class User {
 public:
     User(const string& n = "") : name(n) {}
 
-    void borrowItem(const shared_ptr<LibraryItem>& item) {
+    void borrowItem(shared_ptr<LibraryItem> item) {
+        // Спроба позичити, якщо це книга
+        if (auto book = dynamic_pointer_cast<Book>(item)) {
+            book->borrow();
+        }
         borrowedItems.push_back(item);
         cout << "Item borrowed successfully!\n";
     }
@@ -146,90 +151,73 @@ public:
     }
 };
 
-// Клас для роботи з файлами
+// Робота з файлами
 class FileManager {
     const string itemsFile = "library_items.dat";
     const string usersFile = "users_history.dat";
 
 public:
     void saveItems(const vector<shared_ptr<LibraryItem>>& items) {
-        ofstream file(itemsFile, ios::binary);
-        if (!file.is_open()) {
-            throw runtime_error("Cannot open file for writing: " + itemsFile);
-        }
+        ofstream file(itemsFile);
+        if (!file.is_open()) throw runtime_error("Cannot open file: " + itemsFile);
 
         for (const auto& item : items) {
             string type;
-            if (dynamic_cast<Book*>(item.get())) {
-                type = "BOOK|";
-            } else if (dynamic_cast<Magazine*>(item.get())) {
-                type = "MAGAZINE|";
-            }
+            if (dynamic_cast<Book*>(item.get())) type = "BOOK|";
+            else if (dynamic_cast<Magazine*>(item.get())) type = "MAGAZINE|";
             file << type << item->toFileString() << "\n";
         }
     }
 
     vector<shared_ptr<LibraryItem>> loadItems() {
         vector<shared_ptr<LibraryItem>> items;
-        ifstream file(itemsFile, ios::binary);
-        if (!file.is_open()) {
-            return items;
-        }
+        ifstream file(itemsFile);
+        if (!file.is_open()) return items;
 
         string line;
         while (getline(file, line)) {
-            size_t typePos = line.find('|');
-            if (typePos == string::npos) continue;
+            size_t pos = line.find('|');
+            if (pos == string::npos) continue;
 
-            string type = line.substr(0, typePos);
-            string data = line.substr(typePos + 1);
+            string type = line.substr(0, pos);
+            string data = line.substr(pos + 1);
 
             shared_ptr<LibraryItem> item;
-            if (type == "BOOK") {
-                item = make_shared<Book>();
-            } else if (type == "MAGAZINE") {
-                item = make_shared<Magazine>();
-            } else {
-                continue;
-            }
+            if (type == "BOOK") item = make_shared<Book>();
+            else if (type == "MAGAZINE") item = make_shared<Magazine>();
+            else continue;
 
             try {
                 item->fromFileString(data);
                 items.push_back(item);
-            } catch (const exception& e) {
-                cerr << "Error loading item: " << e.what() << endl;
+            } catch (...) {
+                cerr << "Error parsing line: " << line << endl;
             }
         }
-
         return items;
     }
 
     void saveUserHistory(const User& user) {
-        ofstream file(usersFile, ios::app | ios::binary);
-        if (!file.is_open()) {
-            throw runtime_error("Cannot open file for writing: " + usersFile);
-        }
+        ofstream file(usersFile, ios::app);
+        if (!file.is_open()) throw runtime_error("Cannot open file: " + usersFile);
         user.saveToFile(file);
     }
 
     vector<string> loadUserHistory() {
         vector<string> history;
-        ifstream file(usersFile, ios::binary);
-        if (!file.is_open()) {
-            return history;
-        }
+        ifstream file(usersFile);
+        if (!file.is_open()) return history;
 
         string line;
-        while (getline(file, line)) {
-            history.push_back(line);
-        }
+        while (getline(file, line)) history.push_back(line);
         return history;
     }
 };
 
-// Головний клас програми
+// Основна система
 class LibrarySystem {
     vector<shared_ptr<LibraryItem>> items;
+    unordered_set<string> usedIds;
     FileManager fileManager;
     User currentUser;
     const string adminPassword = "admin123";
@@ -248,25 +236,20 @@ class LibrarySystem {
                 return value;
             }
             clearInput();
-            cout << "Invalid input. Please enter a number.\n";
+            cout << "Invalid input. Try again.\n";
         }
     }
 
 public:
     LibrarySystem() {
-        try {
-            items = fileManager.loadItems();
-        } catch (const exception& e) {
-            cerr << "Error loading items: " << e.what() << endl;
+        items = fileManager.loadItems();
+        for (const auto& item : items) {
+            usedIds.insert(item->getId());
         }
     }
 
     ~LibrarySystem() {
-        try {
-            fileManager.saveItems(items);
-        } catch (const exception& e) {
-            cerr << "Error saving items: " << e.what() << endl;
-        }
+        fileManager.saveItems(items);
     }
 
     void run() {
@@ -276,9 +259,8 @@ public:
             cout << "2. Login as User\n";
             cout << "3. View User History\n";
             cout << "4. Exit\n";
-            
-            int choice = getIntInput("Choose option: ");
 
+            int choice = getIntInput("Choose option: ");
             try {
                 switch (choice) {
                     case 1: adminMenu(); break;
@@ -295,11 +277,10 @@ public:
 
     void adminMenu() {
         cout << "Enter admin password: ";
-        string password;
-        getline(cin, password);
-
-        if (password != adminPassword) {
-            cout << "Incorrect password!\n";
+        string pass;
+        getline(cin, pass);
+        if (pass != adminPassword) {
+            cout << "Incorrect password.\n";
             return;
         }
 
@@ -308,20 +289,15 @@ public:
             cout << "1. Add Book\n";
             cout << "2. Add Magazine\n";
             cout << "3. List All Items\n";
-            cout << "4. Back to Main Menu\n";
-            
-            int choice = getIntInput("Choose option: ");
+            cout << "4. Back\n";
 
-            try {
-                switch (choice) {
-                    case 1: addBook(); break;
-                    case 2: addMagazine(); break;
-                    case 3: listItems(); break;
-                    case 4: return;
-                    default: cout << "Invalid choice!\n";
-                }
-            } catch (const exception& e) {
-                cerr << "Error: " << e.what() << endl;
+            int choice = getIntInput("Choose option: ");
+            switch (choice) {
+                case 1: addBook(); break;
+                case 2: addMagazine(); break;
+                case 3: listItems(); break;
+                case 4: return;
+                default: cout << "Invalid option.\n";
             }
         }
     }
@@ -338,84 +314,63 @@ public:
             cout << "2. Borrow Item\n";
             cout << "3. View My Borrowed Items\n";
             cout << "4. Back to Main Menu\n";
-            
-            int choice = getIntInput("Choose option: ");
 
-            try {
-                switch (choice) {
-                    case 1: listItems(); break;
-                    case 2: borrowItem(); break;
-                    case 3: currentUser.displayBorrowed(); break;
-                    case 4: {
-                        fileManager.saveUserHistory(currentUser);
-                        return;
-                    }
-                    default: cout << "Invalid choice!\n";
-                }
-            } catch (const exception& e) {
-                cerr << "Error: " << e.what() << endl;
+            int choice = getIntInput("Choose option: ");
+            switch (choice) {
+                case 1: listItems(); break;
+                case 2: borrowItem(); break;
+                case 3: currentUser.displayBorrowed(); break;
+                case 4:
+                    fileManager.saveUserHistory(currentUser);
+                    return;
+                default: cout << "Invalid option.\n";
             }
         }
     }
 
     void viewHistory() {
-        try {
-            auto history = fileManager.loadUserHistory();
-            if (history.empty()) {
-                cout << "No history found.\n";
-                return;
-            }
-            
-            cout << "\n=== User History ===\n";
-            for (const auto& entry : history) {
-                size_t pos = entry.find('|');
-                if (pos != string::npos) {
-                    cout << entry.substr(pos + 1) << endl;
-                }
-            }
-        } catch (const exception& e) {
-            cerr << "Error loading history: " << e.what() << endl;
+        auto history = fileManager.loadUserHistory();
+        if (history.empty()) {
+            cout << "No user history found.\n";
+            return;
+        }
+
+        cout << "\n=== User History ===\n";
+        for (const string& entry : history) {
+            cout << entry << endl;
         }
     }
 
     void addBook() {
-        cout << "Enter title: ";
-        string title;
-        getline(cin, title);
-
-        cout << "Enter author: ";
-        string author;
-        getline(cin, author);
-
-        cout << "Enter ID: ";
-        string id;
-        getline(cin, id);
-
-        cout << "Enter ISBN: ";
-        string isbn;
-        getline(cin, isbn);
+        string title, author, id, isbn;
+        cout << "Enter title: "; getline(cin, title);
+        cout << "Enter author: "; getline(cin, author);
+        cout << "Enter ID: "; getline(cin, id);
+        if (usedIds.count(id)) {
+            cout << "ID already exists!\n";
+            return;
+        }
+        cout << "Enter ISBN: "; getline(cin, isbn);
 
         items.push_back(make_shared<Book>(title, author, id, isbn));
-        cout << "Book added successfully!\n";
+        usedIds.insert(id);
+        cout << "Book added.\n";
     }
 
     void addMagazine() {
-        cout << "Enter title: ";
-        string title;
-        getline(cin, title);
-
-        cout << "Enter author: ";
-        string author;
-        getline(cin, author);
-
-        cout << "Enter ID: ";
-        string id;
-        getline(cin, id);
-
+        string title, author, id;
+        cout << "Enter title: "; getline(cin, title);
+        cout << "Enter author: "; getline(cin, author);
+        cout << "Enter ID: "; getline(cin, id);
+        if (usedIds.count(id)) {
+            cout << "ID already exists!\n";
+            return;
+        }
         int issue = getIntInput("Enter issue number: ");
 
         items.push_back(make_shared<Magazine>(title, author, id, issue));
-        cout << "Magazine added successfully!\n";
+        usedIds.insert(id);
+        cout << "Magazine added.\n";
     }
 
     void listItems() const {
@@ -423,8 +378,7 @@ public:
             cout << "No items available.\n";
             return;
         }
-        
-        cout << "\n=== Library Items (" << items.size() << ") ===\n";
+        cout << "\n=== Available Items ===\n";
         for (size_t i = 0; i < items.size(); ++i) {
             cout << i + 1 << ". ";
             items[i]->display();
@@ -435,15 +389,14 @@ public:
         listItems();
         if (items.empty()) return;
 
-        int index = getIntInput("Enter item number to borrow (0 to cancel): ");
-        if (index == 0) return;
-        
-        if (index < 1 || index > static_cast<int>(items.size())) {
-            cout << "Invalid item number!\n";
+        int idx = getIntInput("Enter item number to borrow (0 to cancel): ");
+        if (idx == 0) return;
+        if (idx < 1 || idx > static_cast<int>(items.size())) {
+            cout << "Invalid number.\n";
             return;
         }
 
-        currentUser.borrowItem(items[index - 1]);
+        currentUser.borrowItem(items[idx - 1]);
     }
 };
 

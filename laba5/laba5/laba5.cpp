@@ -1,171 +1,459 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <memory>
+Р’РѕС‚ С‚РѕР±С– РєРѕРґ, РЅР°СЃС‚СѓРїРЅРёРј СЃРѕРѕР±С‰РµРЅС–СЏРј СЏ СЃРєР°Р¶Сѓ С‰Рѕ РїРѕС‚СЂС–Р±РЅРѕ Р·СЂРѕР±РёС‚Рё
 
-// 1. Базовий клас LibraryItem з віртуальними функціями
+#include <iostream>
+#include <fstream>
+#include <memory>
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <limits>
+#include <algorithm>
+
+using namespace std;
+
+// Р‘Р°Р·РѕРІРёР№ РєР»Р°СЃ РґР»СЏ РµР»РµРјРµРЅС‚С–РІ Р±С–Р±Р»С–РѕС‚РµРєРё
 class LibraryItem {
 protected:
-    std::string title;
-    std::string author;
-    std::string id;
+    string title;
+    string author;
+    string id;
 
 public:
-    LibraryItem(std::string t, std::string a, std::string i)
-        : title(t), author(a), id(i) {
-    }
+    LibraryItem(const string& t, const string& a, const string& i) 
+        : title(t), author(a), id(i) {}
+    virtual ~LibraryItem() = default;
 
-    // 4. Віртуальний деструктор (вимога №4)
-    virtual ~LibraryItem() {
-        std::cout << "LibraryItem destructor: " << title << std::endl;
-    }
-
-    // 2. Віртуальні функції (вимога №2)
     virtual void display() const {
-        std::cout << "Title: " << title << ", Author: " << author << ", ID: " << id;
+        cout << "Title: " << title << ", Author: " << author << ", ID: " << id;
     }
 
-    virtual void checkOut() {
-        std::cout << "Checking out item: " << title << std::endl;
+    virtual string toFileString() const {
+        return title + "|" + author + "|" + id;
     }
 
-    // 7. Чисто віртуальна функція (вимога №7)
-    virtual void returnItem() = 0;
-
-    // 5. Фінальний метод (вимога №5)
-    virtual std::string getLocation() const final {
-        return "Library Shelf A";
+    virtual void fromFileString(const string& data) {
+        size_t pos1 = data.find('|');
+        size_t pos2 = data.find('|', pos1 + 1);
+        if (pos1 == string::npos || pos2 == string::npos) {
+            throw invalid_argument("Invalid data format");
+        }
+        title = data.substr(0, pos1);
+        author = data.substr(pos1 + 1, pos2 - pos1 - 1);
+        id = data.substr(pos2 + 1);
     }
 };
 
-// 8. Інтерфейс для друкованих матеріалів (вимога №8)
-class IPrintable {
-public:
-    virtual ~IPrintable() = default;
-    virtual void printInfo() const = 0;
-};
-
-// 3. Клас Book з перевизначеними віртуальними функціями (вимога №3)
-class Book : public LibraryItem, public IPrintable {
-private:
-    std::string ISBN;
+// РљР»Р°СЃ РґР»СЏ РєРЅРёРі
+class Book : public LibraryItem {
+    string ISBN;
     bool isBorrowed;
 
 public:
-    Book(std::string t, std::string a, std::string i, std::string isbn)
-        : LibraryItem(t, a, i), ISBN(isbn), isBorrowed(false) {
-    }
+    Book(const string& t = "", const string& a = "", const string& i = "", 
+         const string& isbn = "", bool borrowed = false)
+        : LibraryItem(t, a, i), ISBN(isbn), isBorrowed(borrowed) {}
 
-    // Перевизначення віртуальних функцій
     void display() const override {
         LibraryItem::display();
-        std::cout << ", ISBN: " << ISBN << ", Status: " << (isBorrowed ? "Borrowed" : "Available") << std::endl;
+        cout << ", ISBN: " << ISBN << ", Status: " << (isBorrowed ? "Borrowed" : "Available") << endl;
     }
 
-    void checkOut() override {
-        isBorrowed = true;
-        std::cout << "Book checked out: " << title << std::endl;
+    string toFileString() const override {
+        return LibraryItem::toFileString() + "|" + ISBN + "|" + (isBorrowed ? "1" : "0");
     }
 
-    void returnItem() override {
-        isBorrowed = false;
-        std::cout << "Book returned: " << title << std::endl;
-    }
+    void fromFileString(const string& data) override {
+        vector<string> parts;
+        size_t start = 0;
+        size_t end = data.find('|');
+        
+        while (end != string::npos) {
+            parts.push_back(data.substr(start, end - start));
+            start = end + 1;
+            end = data.find('|', start);
+        }
+        parts.push_back(data.substr(start));
 
-    // Реалізація інтерфейсу
-    void printInfo() const override {
-        std::cout << "Printing book info: " << title << " by " << author << std::endl;
+        if (parts.size() != 5) {
+            throw invalid_argument("Invalid book data format");
+        }
+
+        title = parts[0];
+        author = parts[1];
+        id = parts[2];
+        ISBN = parts[3];
+        isBorrowed = parts[4] == "1";
     }
 };
 
-// 5. Фінальний клас (вимога №5)
-final class Magazine : public LibraryItem {
-private:
+// РљР»Р°СЃ РґР»СЏ Р¶СѓСЂРЅР°Р»С–РІ
+class Magazine : public LibraryItem {
     int issueNumber;
 
 public:
-    Magazine(std::string t, std::string a, std::string i, int issue)
-        : LibraryItem(t, a, i), issueNumber(issue) {
-    }
+    Magazine(const string& t = "", const string& a = "", const string& i = "", int issue = 0)
+        : LibraryItem(t, a, i), issueNumber(issue) {}
 
-    // Перевизначення віртуальних функцій
     void display() const override {
         LibraryItem::display();
-        std::cout << ", Issue: " << issueNumber << std::endl;
+        cout << ", Issue: " << issueNumber << endl;
     }
 
-    void returnItem() override {
-        std::cout << "Magazine returned: " << title << std::endl;
+    string toFileString() const override {
+        return LibraryItem::toFileString() + "|" + to_string(issueNumber);
+    }
+
+    void fromFileString(const string& data) override {
+        size_t pos = data.rfind('|');
+        if (pos == string::npos) {
+            throw invalid_argument("Invalid magazine data format");
+        }
+        
+        LibraryItem::fromFileString(data.substr(0, pos));
+        issueNumber = stoi(data.substr(pos + 1));
     }
 };
 
-// 1. Демонстрація статичної прив'язки (вимога №1)
-class StaticBindingDemo {
+// РљР»Р°СЃ РґР»СЏ РєРѕСЂРёСЃС‚СѓРІР°С‡Р°
+class User {
+    string name;
+    vector<shared_ptr<LibraryItem>> borrowedItems;
+
 public:
-    void showInfo() { // Не віртуальний метод
-        std::cout << "Static binding demo - base class" << std::endl;
+    User(const string& n = "") : name(n) {}
+
+    void borrowItem(const shared_ptr<LibraryItem>& item) {
+        borrowedItems.push_back(item);
+        cout << "Item borrowed successfully!\n";
+    }
+
+    void displayBorrowed() const {
+        if (borrowedItems.empty()) {
+            cout << "No items borrowed.\n";
+            return;
+        }
+        cout << "\nBorrowed items by " << name << ":\n";
+        for (const auto& item : borrowedItems) {
+            item->display();
+        }
+    }
+
+    void saveToFile(ofstream& file) const {
+        file << "USER|" << name << "\n";
+        for (const auto& item : borrowedItems) {
+            file << "ITEM|" << item->toFileString() << "\n";
+        }
     }
 };
 
-class DerivedStatic : public StaticBindingDemo {
+// РљР»Р°СЃ РґР»СЏ СЂРѕР±РѕС‚Рё Р· С„Р°Р№Р»Р°РјРё
+class FileManager {
+    const string itemsFile = "library_items.dat";
+    const string usersFile = "users_history.dat";
+
 public:
-    void showInfo() {
-        std::cout << "Static binding demo - derived class" << std::endl;
+    void saveItems(const vector<shared_ptr<LibraryItem>>& items) {
+        ofstream file(itemsFile, ios::binary);
+        if (!file.is_open()) {
+            throw runtime_error("Cannot open file for writing: " + itemsFile);
+        }
+
+        for (const auto& item : items) {
+            string type;
+            if (dynamic_cast<Book*>(item.get())) {
+                type = "BOOK|";
+            } else if (dynamic_cast<Magazine*>(item.get())) {
+                type = "MAGAZINE|";
+            }
+            file << type << item->toFileString() << "\n";
+        }
+    }
+
+    vector<shared_ptr<LibraryItem>> loadItems() {
+        vector<shared_ptr<LibraryItem>> items;
+        ifstream file(itemsFile, ios::binary);
+        if (!file.is_open()) {
+            return items;
+        }
+
+        string line;
+        while (getline(file, line)) {
+            size_t typePos = line.find('|');
+            if (typePos == string::npos) continue;
+
+            string type = line.substr(0, typePos);
+            string data = line.substr(typePos + 1);
+
+            shared_ptr<LibraryItem> item;
+            if (type == "BOOK") {
+                item = make_shared<Book>();
+            } else if (type == "MAGAZINE") {
+                item = make_shared<Magazine>();
+            } else {
+                continue;
+            }
+
+            try {
+                item->fromFileString(data);
+                items.push_back(item);
+            } catch (const exception& e) {
+                cerr << "Error loading item: " << e.what() << endl;
+            }
+        }
+
+        return items;
+    }
+
+    void saveUserHistory(const User& user) {
+        ofstream file(usersFile, ios::app | ios::binary);
+        if (!file.is_open()) {
+            throw runtime_error("Cannot open file for writing: " + usersFile);
+        }
+        user.saveToFile(file);
+    }
+
+    vector<string> loadUserHistory() {
+        vector<string> history;
+        ifstream file(usersFile, ios::binary);
+        if (!file.is_open()) {
+            return history;
+        }
+
+        string line;
+        while (getline(file, line)) {
+            history.push_back(line);
+        }
+        return history;
     }
 };
 
-// Функція для демонстрації поліморфізму
-void demonstratePolymorphism() {
-    std::cout << "\n=== Demonstrating Polymorphism ===\n";
+// Р“РѕР»РѕРІРЅРёР№ РєР»Р°СЃ РїСЂРѕРіСЂР°РјРё
+class LibrarySystem {
+    vector<shared_ptr<LibraryItem>> items;
+    FileManager fileManager;
+    User currentUser;
+    const string adminPassword = "admin123";
 
-    // Створення об'єктів
-    Book book("1984", "George Orwell", "B001", "123456789");
-    Magazine magazine("National Geographic", "Various", "M001", 256);
+    void clearInput() {
+        cin.clear();
+        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+    }
 
-    // 3. Динамічний поліморфізм через вказівник на базовий клас (вимога №3)
-    LibraryItem* item1 = &book;
-    LibraryItem* item2 = &magazine;
+    int getIntInput(const string& prompt) {
+        int value;
+        while (true) {
+            cout << prompt;
+            if (cin >> value) {
+                clearInput();
+                return value;
+            }
+            clearInput();
+            cout << "Invalid input. Please enter a number.\n";
+        }
+    }
 
-    std::cout << "\nUsing base class pointers:\n";
-    item1->display();
-    item1->checkOut();
-    item1->returnItem();
+public:
+    LibrarySystem() {
+        try {
+            items = fileManager.loadItems();
+        } catch (const exception& e) {
+            cerr << "Error loading items: " << e.what() << endl;
+        }
+    }
 
-    item2->display();
-    item2->returnItem();
+    ~LibrarySystem() {
+        try {
+            fileManager.saveItems(items);
+        } catch (const exception& e) {
+            cerr << "Error saving items: " << e.what() << endl;
+        }
+    }
 
-    // 6. Динамічний поліморфізм через посилання (вимога №6)
-    LibraryItem& ref1 = book;
-    LibraryItem& ref2 = magazine;
+    void run() {
+        while (true) {
+            cout << "\n=== Library System ===\n";
+            cout << "1. Login as Admin\n";
+            cout << "2. Login as User\n";
+            cout << "3. View User History\n";
+            cout << "4. Exit\n";
+            
+            int choice = getIntInput("Choose option: ");
 
-    std::cout << "\nUsing base class references:\n";
-    ref1.display();
-    ref2.display();
+            try {
+                switch (choice) {
+                    case 1: adminMenu(); break;
+                    case 2: userMenu(); break;
+                    case 3: viewHistory(); break;
+                    case 4: return;
+                    default: cout << "Invalid choice!\n";
+                }
+            } catch (const exception& e) {
+                cerr << "Error: " << e.what() << endl;
+            }
+        }
+    }
 
-    // 8. Використання інтерфейсу (вимога №8)
-    IPrintable* printable = &book;
-    std::cout << "\nUsing interface:\n";
-    printable->printInfo();
+    void adminMenu() {
+        cout << "Enter admin password: ";
+        string password;
+        getline(cin, password);
 
-    // 1. Демонстрація статичної прив'язки (вимога №1)
-    StaticBindingDemo staticObj;
-    DerivedStatic derivedStaticObj;
-    StaticBindingDemo* staticPtr = &derivedStaticObj;
+        if (password != adminPassword) {
+            cout << "Incorrect password!\n";
+            return;
+        }
 
-    std::cout << "\nStatic binding demo:\n";
-    staticObj.showInfo();    // Виклик методу базового класу
-    derivedStaticObj.showInfo(); // Виклик методу похідного класу
-    staticPtr->showInfo();   // Статична прив'язка - виклик методу базового класу
-}
+        while (true) {
+            cout << "\n=== Admin Menu ===\n";
+            cout << "1. Add Book\n";
+            cout << "2. Add Magazine\n";
+            cout << "3. List All Items\n";
+            cout << "4. Back to Main Menu\n";
+            
+            int choice = getIntInput("Choose option: ");
+
+            try {
+                switch (choice) {
+                    case 1: addBook(); break;
+                    case 2: addMagazine(); break;
+                    case 3: listItems(); break;
+                    case 4: return;
+                    default: cout << "Invalid choice!\n";
+                }
+            } catch (const exception& e) {
+                cerr << "Error: " << e.what() << endl;
+            }
+        }
+    }
+
+    void userMenu() {
+        cout << "Enter your name: ";
+        string name;
+        getline(cin, name);
+        currentUser = User(name);
+
+        while (true) {
+            cout << "\n=== User Menu (" << name << ") ===\n";
+            cout << "1. Browse Items\n";
+            cout << "2. Borrow Item\n";
+            cout << "3. View My Borrowed Items\n";
+            cout << "4. Back to Main Menu\n";
+            
+            int choice = getIntInput("Choose option: ");
+
+            try {
+                switch (choice) {
+                    case 1: listItems(); break;
+                    case 2: borrowItem(); break;
+                    case 3: currentUser.displayBorrowed(); break;
+                    case 4: {
+                        fileManager.saveUserHistory(currentUser);
+                        return;
+                    }
+                    default: cout << "Invalid choice!\n";
+                }
+            } catch (const exception& e) {
+                cerr << "Error: " << e.what() << endl;
+            }
+        }
+    }
+
+    void viewHistory() {
+        try {
+            auto history = fileManager.loadUserHistory();
+            if (history.empty()) {
+                cout << "No history found.\n";
+                return;
+            }
+            
+            cout << "\n=== User History ===\n";
+            for (const auto& entry : history) {
+                size_t pos = entry.find('|');
+                if (pos != string::npos) {
+                    cout << entry.substr(pos + 1) << endl;
+                }
+            }
+        } catch (const exception& e) {
+            cerr << "Error loading history: " << e.what() << endl;
+        }
+    }
+
+    void addBook() {
+        cout << "Enter title: ";
+        string title;
+        getline(cin, title);
+
+        cout << "Enter author: ";
+        string author;
+        getline(cin, author);
+
+        cout << "Enter ID: ";
+        string id;
+        getline(cin, id);
+
+        cout << "Enter ISBN: ";
+        string isbn;
+        getline(cin, isbn);
+
+        items.push_back(make_shared<Book>(title, author, id, isbn));
+        cout << "Book added successfully!\n";
+    }
+
+    void addMagazine() {
+        cout << "Enter title: ";
+        string title;
+        getline(cin, title);
+
+        cout << "Enter author: ";
+        string author;
+        getline(cin, author);
+
+        cout << "Enter ID: ";
+        string id;
+        getline(cin, id);
+
+        int issue = getIntInput("Enter issue number: ");
+
+        items.push_back(make_shared<Magazine>(title, author, id, issue));
+        cout << "Magazine added successfully!\n";
+    }
+
+    void listItems() const {
+        if (items.empty()) {
+            cout << "No items available.\n";
+            return;
+        }
+        
+        cout << "\n=== Library Items (" << items.size() << ") ===\n";
+        for (size_t i = 0; i < items.size(); ++i) {
+            cout << i + 1 << ". ";
+            items[i]->display();
+        }
+    }
+
+    void borrowItem() {
+        listItems();
+        if (items.empty()) return;
+
+        int index = getIntInput("Enter item number to borrow (0 to cancel): ");
+        if (index == 0) return;
+        
+        if (index < 1 || index > static_cast<int>(items.size())) {
+            cout << "Invalid item number!\n";
+            return;
+        }
+
+        currentUser.borrowItem(items[index - 1]);
+    }
+};
 
 int main() {
-    demonstratePolymorphism();
-
-    // Додаткова демонстрація з smart pointers
-    std::cout << "\n=== Smart Pointers Demo ===\n";
-    std::unique_ptr<LibraryItem> item = std::make_unique<Book>("The Hobbit", "J.R.R. Tolkien", "B002", "555555555");
-    item->display();
-    item->returnItem();
-
+    try {
+        LibrarySystem system;
+        system.run();
+    } catch (const exception& e) {
+        cerr << "Fatal error: " << e.what() << endl;
+        return 1;
+    }
     return 0;
 }
